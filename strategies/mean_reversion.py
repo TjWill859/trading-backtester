@@ -16,3 +16,24 @@ def mean_reversion_signal(close: pd.Series, window: int = 20,
 
 
     return state.ffill().fillna(0)             
+
+
+class MeanReversionStrategy:
+    """Streaming version. Remembers whether it's currently holding."""
+
+    def __init__(self, window=20, threshold=0.05):
+        self.window = window
+        self.threshold = threshold
+        self.holding = 0          # the memory
+
+    def on_bar(self, history):
+        if len(history) < self.window:
+            return self.holding   # not enough data for a moving average yet
+        price = history.iloc[-1]
+        ma = history.iloc[-self.window:].mean()
+
+        if price < ma * (1 - self.threshold):
+            self.holding = 1      # dropped far below average: buy
+        elif price >= ma:
+            self.holding = 0      # reverted to average: sell
+        return self.holding       # in between: keep doing what we were doing
