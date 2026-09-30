@@ -1,6 +1,7 @@
 # engine/event_driven.py
 from dataclasses import dataclass
 import pandas as pd
+import math
 
 
 @dataclass
@@ -31,11 +32,21 @@ class Portfolio:
         holdings = sum(shares * prices[t] for t, shares in self.positions.items())
         return self.cash + holdings
 
-    def make_order(self, date, ticker, target, price, fee_rate=0.0):
+    def make_order(self, date, ticker, target, price, fee_rate=0.0, fractional=True):
+        """Position sizing: what must I trade to hold `target` (0 to 1) of my money in ticker?"""
         equity = self.equity({ticker: price})
         current = self.positions.get(ticker, 0.0)
-        desired = target * equity / (price * (1 + fee_rate)) # leaving room for the fee
+        desired = target * equity / (price * (1 + fee_rate))
+        if not fractional:
+            desired = math.floor(desired)               # whole shares only
+
         change = desired - current
+        if change > 0:                                  # buying: never spend more than we have
+            affordable = self.cash / (price * (1 + fee_rate))
+            if not fractional:
+                affordable = math.floor(affordable)
+            change = min(change, affordable)
+
         if abs(change) < 1e-9:
             return None
         return Order(date, ticker, change)
@@ -64,12 +75,13 @@ class Broker:
 class EventDrivenBacktester:
     """Walks through history one day at a time. The conveyor belt."""
 
-    def __init__(self, close, ticker, strategy, initial_capital=100_000, cost_bps=0.0):
+    def __init__(self, close, ticker, strategy, initial_capital=100_000, cost_bps=0.0, fractional=True):
         self.close = close              # pd.Series of prices for ONE ticker
         self.ticker = ticker
         self.strategy = strategy        # use a FRESH strategy object per run
         self.initial_capital = initial_capital
         self.cost_bps = cost_bps
+        self.fractional = fractional
         self.portfolio = None           # filled in by run(), so you can inspect fills after
 
     def run(self):
@@ -86,7 +98,7 @@ class EventDrivenBacktester:
 
             if new_target != target:                   # 3. only trade when the decision CHANGES
                 order = self.portfolio.make_order(date, self.ticker, new_target,
-                                                  price, broker.fee_rate)
+                                                  price, broker.fee_rate, self.fractional)
                 if order is not None:
                     self.portfolio.apply_fill(broker.execute(order, price))
                 target = new_target
