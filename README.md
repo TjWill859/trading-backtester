@@ -59,5 +59,6 @@ for a single stock over one period.
   vs 1.0) and a shallower worst drawdown (-26% vs -39%), so it gave a smoother ride
   rather than a higher return.
 - **Mean-reversion had a max drawdown (-39.9%) as deep as buy-and-hold's despite
-  being mostly in cash**, with a Sharpe of only 0.17. [Phase 9: confirm the date
-  of the worst drawdown; my guess is March 2020, when it bought the crash.]
+  being mostly in cash**, with a Sharpe of only 0.17. Mean-reverstion's worst drawdown (-39%) which bottomed on 2020-03-23, the COVID crash low.
+
+  Regime comparison. I ran each strategy once over 2018-2024, then sliced the daily returns into two windows and rebuilt a fresh $100k equity curve for each, so the lookback windows were already warmed up. In the 2022 bear market, mean-reversion was the only strategy that made money (+4.4%, max drawdown -15%), while buy-and-hold AAPL fell 26% and SPY fell 18%. Momentum was mixed: the 20-day version (-18%) roughly matched SPY, but the 126-day version lost 36%, whipsawed by bear-market rallies. In the 2023-24 bull run the ranking flipped. Buy-and-hold AAPL returned 40%/yr and SPY 26%/yr, both momentum versions earned about 21%/yr, and mean-reversion earned only 7.4%/yr. Trading frequency also changed with the market: mom_20 made about 29 trades in 2022 versus about 24 per year in the bull run, so choppy markets cost more in fees. These are single episodes on a single stock with a handful of parameter choices, so they illustrate regime dependence rather than prove it. I lean on return and drawdown here because Sharpe over a single year is noisy, and alpha vs. SPY looks inflated in 2022 mainly because SPY fell.
