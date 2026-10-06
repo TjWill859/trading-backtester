@@ -1,64 +1,155 @@
 # Trading Backtester
 
+A backtesting engine I built from scratch in Python (no backtrader/zipline) to test
+a **momentum** strategy and a **mean-reversion** strategy on AAPL, 2018-2024. I built
+it twice: a fast **vectorized** engine and a day-by-day **event-driven** engine, then
+checked that they agree. Main takeaway: buy-and-hold AAPL had the highest return,
+the 20-day momentum strategy had the best risk-adjusted result (Sharpe 1.20 vs 1.01),
+and mean-reversion was the weakest overall but the only strategy to make money in the
+2022 bear market. Stack: Python, pandas, numpy, matplotlib, yfinance.
 
-## Vectorized vs. event-driven engine
+![Equity curves](results/equity_curve.png)
+![Drawdowns](results/drawdown.png)
 
-I built the backtester twice: a vectorized engine (fast, whole price series at
-once) and an event-driven engine (day-by-day loop with Order, Fill, Broker, and
-Portfolio classes). The event-driven version was designed to reproduce the
-vectorized one, so any difference between them has to be explained.
+## Strategies
 
-*AAPL, 2018-2024, $100k start, 5 bps costs. Benchmark: SPY buy-and-hold (13.7%/yr).
-Alpha = strategy return minus benchmark return (not beta-adjusted).*
+Both strategies output a **signal**: 1 = hold the stock, 0 = hold cash.
 
-| Strategy | Engine | Sharpe | Max DD | Ann. return | Alpha | Final equity | Trades/yr |
-|---|---|---|---|---|---|---|---|
-| buy_hold_AAPL | vectorized | 1.010 | -38.5% | 29.9% | 16.2% | $622,031 | 0.1 |
-| | event (fractional) | 1.010 | -38.5% | 29.9% | 16.2% | $622,031 | 0.1 |
-| | event (whole shares) | 1.010 | -38.5% | 29.9% | 16.2% | $621,964 | 0.1 |
-| mom_20 | vectorized | 1.205 | -25.8% | 24.8% | 11.1% | $468,906 | 20.2 |
-| | event (fractional) | 1.203 | -25.9% | 24.8% | 11.1% | $468,873 | 20.2 |
-| | event (whole shares) | 1.203 | -25.9% | 24.8% | 11.1% | $468,776 | 20.2 |
-| mom_126 | vectorized | 0.805 | -38.1% | 18.9% | 5.2% | $334,375 | 6.4 |
-| | event (fractional) | 0.805 | -38.1% | 18.9% | 5.2% | $334,389 | 6.4 |
-| | event (whole shares) | 0.805 | -38.1% | 18.9% | 5.2% | $334,331 | 6.4 |
-| mr_20_5% | vectorized | 0.172 | -39.9% | 1.5% | -12.2% | $110,672 | 6.6 |
-| | event (fractional) | 0.172 | -39.9% | 1.5% | -12.2% | $110,669 | 6.6 |
-| | event (whole shares) | 0.172 | -39.9% | 1.5% | -12.2% | $110,656 | 6.6 |
+- **Momentum (`mom_N`)**: hold when the stock's return over the last N days is
+  positive, otherwise sit in cash. Idea: winners keep winning. Tested N = 20 and 126.
+- **Mean-reversion (`mr_N_X%`)**: buy when the price falls X% below its N-day moving
+  average, sell when it climbs back to the average. Idea: big dips snap back.
+  Tested N = 20, X = 5%.
+- **Buy & hold AAPL** and **SPY buy & hold** are the yardsticks.
 
-**Do they agree?**
-- **Signals.** Streaming versions of both strategies (which only see data up to
-  today) produced identical signals to the vectorized versions across all 10
-  parameter sets tested, which confirms the vectorized signals have no look-ahead.
-- **Zero costs.** Final equity matched to the cent, with a max daily difference
-  around 1e-15 (floating-point noise).
-- **5 bps costs.** Final equity differs by under 0.01% (e.g. mom_20: $468,906
-  vectorized vs $468,873 event-driven), Sharpe by at most 0.002, and max drawdown
-  by 0.1 percentage point. The cause is fee timing: the event engine charges the
-  fee on the day of the trade, while the vectorized engine charges it the day after.
+Each strategy exists in two forms: a vectorized function (whole price series at once)
+and a streaming class with `.on_bar(history)` that only sees the past. They produce
+identical signals, which confirms there is no look-ahead bias.
 
-**What realism changes.** Restricting the event-driven engine to whole shares
-lowers final equity by only 0.01-0.03% at $100k, but by about 0.5% for the
-momentum strategies at $5k, where one share is a meaningful slice of the
-account. (Mean-reversion at $5k moved +0.10%, so the effect can go either way.)
+## How the engines work
 
-**Takeaway.** Differences between the engines (under 0.01%, or about 0.5% for a
-small account with whole shares) are tiny next to differences between
-strategies (mom_20 ends at ~$469k vs ~$334k for mom_126), so the strategy
-conclusions don't depend on which engine produced them.
+- **Vectorized** (`engine/vectorized.py`): signal -> yesterday's signal becomes today's
+  position -> position x daily return -> minus costs -> equity curve.
+  Shifting the signal by one day is what prevents look-ahead.
+- **Event-driven** (`engine/event_driven.py`): a loop over each day. The strategy
+  makes a decision, a `Portfolio` creates an `Order`, a `Broker` turns it into a
+  `Fill` (charging the fee), and the portfolio updates cash and shares. It can also
+  trade whole shares only.
+- **Costs:** a flat 5 basis points (0.05%) of the amount traded, per buy or sell.
+  Trades per year are reported next to every result so the cost assumption is concrete.
+- **Metrics** (`engine/metrics.py`): Sharpe ratio, max drawdown, annualized return,
+  alpha vs SPY.
 
-**Limitations.** Both engines fill at the close of the signal day, a slightly
-optimistic convention; a next-open fill would be more conservative. Results are
-for a single stock over one period.
+## Results
 
+*AAPL, 2018-2024, $100k start, 5 bps costs. Alpha = strategy annualized return minus
+SPY's (13.7%/yr), not beta-adjusted. Risk-free rate = 0.*
+
+| Strategy | Sharpe | Max drawdown | Ann. return | Alpha vs SPY | Trades/yr |
+|---|---|---|---|---|---|
+| SPY buy & hold | 0.76 | -33.7% | 13.7% | n/a | ~0 |
+| AAPL buy & hold | 1.01 | -38.5% | 29.9% | 16.2% | 0.1 |
+| `mom_20` | **1.20** | **-25.8%** | 24.8% | 11.1% | 20.2 |
+| `mom_126` | 0.81 | -38.1% | 18.9% | 5.2% | 6.4 |
+| `mr_20_5%` | 0.17 | -39.9% | 1.5% | -12.2% | 6.6 |
+
+### Vectorized vs. event-driven
+
+The event-driven engine was designed to reproduce the vectorized one, so any gap has to
+be explained.
+
+| Strategy | Engine | Sharpe | Max DD | Ann. return | Final equity |
+|---|---|---|---|---|---|
+| mom_20 | vectorized | 1.205 | -25.8% | 24.8% | $468,906 |
+| | event (fractional) | 1.203 | -25.9% | 24.8% | $468,873 |
+| | event (whole shares) | 1.203 | -25.9% | 24.8% | $468,776 |
+| mom_126 | vectorized | 0.805 | -38.1% | 18.9% | $334,375 |
+| | event (fractional) | 0.805 | -38.1% | 18.9% | $334,389 |
+| | event (whole shares) | 0.805 | -38.1% | 18.9% | $334,331 |
+| mr_20_5% | vectorized | 0.172 | -39.9% | 1.5% | $110,672 |
+| | event (fractional) | 0.172 | -39.9% | 1.5% | $110,669 |
+| | event (whole shares) | 0.172 | -39.9% | 1.5% | $110,656 |
+
+Full table (including buy & hold): `results/engine_comparison.csv`.
+
+- **Zero costs:** final equity matches to the cent (differences ~1e-15, floating-point noise).
+- **5 bps costs:** final equity differs by under 0.01%. The cause is fee timing: the
+  event engine charges the fee on the day of the trade, the vectorized one the day after.
+- **Whole shares:** costs only 0.01-0.03% at $100k, but about 0.5% for momentum at
+  $5k, where one share is a big slice of the account.
+- **Takeaway:** engine differences (under 0.01%) are tiny next to strategy differences
+  (mom_20 ends near $469k vs $334k for mom_126), so the conclusions don't depend on
+  which engine produced them.
 
 ## Key findings
 
-- **Buy-and-hold AAPL beat every strategy on total return** (29.9%/yr vs 24.8% for
-  the best strategy, mom_20). mom_20 had the best risk-adjusted result (Sharpe 1.2
-  vs 1.0) and a shallower worst drawdown (-26% vs -39%), so it gave a smoother ride
-  rather than a higher return.
-- **Mean-reversion had a max drawdown (-39.9%) as deep as buy-and-hold's despite
-  being mostly in cash**, with a Sharpe of only 0.17. Mean-reverstion's worst drawdown (-39%) which bottomed on 2020-03-23, the COVID crash low.
+- **Buy-and-hold AAPL beat every strategy on return** (29.9%/yr vs 24.8% for mom_20).
+  mom_20 had the best Sharpe (1.20 vs 1.01) and a shallower worst drawdown (-26% vs
+  -39%), so it gave a smoother ride, not a higher return. The price: about 20 trades
+  a year.
+- **Mean-reversion was mostly in cash but still had a -39.9% drawdown**, as deep as
+  buy-and-hold's. It bottomed on 2020-03-23, the COVID crash low: the strategy kept
+  buying a falling stock because it looked "cheap" versus its average.
+- **Regime comparison.** I ran each strategy once over 2018-2024, then sliced the
+  daily returns into two windows and rebuilt a fresh $100k equity curve for each
+  (so the lookback windows were already warmed up). Details in
+  `results/regime_comparison.csv`.
 
-  Regime comparison. I ran each strategy once over 2018-2024, then sliced the daily returns into two windows and rebuilt a fresh $100k equity curve for each, so the lookback windows were already warmed up. In the 2022 bear market, mean-reversion was the only strategy that made money (+4.4%, max drawdown -15%), while buy-and-hold AAPL fell 26% and SPY fell 18%. Momentum was mixed: the 20-day version (-18%) roughly matched SPY, but the 126-day version lost 36%, whipsawed by bear-market rallies. In the 2023-24 bull run the ranking flipped. Buy-and-hold AAPL returned 40%/yr and SPY 26%/yr, both momentum versions earned about 21%/yr, and mean-reversion earned only 7.4%/yr. Trading frequency also changed with the market: mom_20 made about 29 trades in 2022 versus about 24 per year in the bull run, so choppy markets cost more in fees. These are single episodes on a single stock with a handful of parameter choices, so they illustrate regime dependence rather than prove it. I lean on return and drawdown here because Sharpe over a single year is noisy, and alpha vs. SPY looks inflated in 2022 mainly because SPY fell.
+| Annualized return / max DD | 2022 bear | 2023-24 bull |
+|---|---|---|
+| SPY | -18.2% | +25.9% |
+| AAPL buy & hold | -26.4% / -30.3% | +40.2% / -16.6% |
+| mom_20 | -18.0% / -21.5% | +21.5% / -19.5% |
+| mom_126 | -36.2% / -37.8% | +20.5% / -15.9% |
+| mr_20_5% | **+4.4% / -15.4%** | +7.4% / -4.4% |
+
+  In the 2022 bear market, mean-reversion was the only strategy that made money, while
+  buy-and-hold AAPL fell 26% and SPY fell 18%. Momentum was mixed: the 20-day version
+  roughly matched SPY, but the 126-day version lost 36%, whipsawed by bear-market
+  rallies. In the 2023-24 bull run the ranking flipped: AAPL returned 40%/yr, SPY 26%/yr,
+  both momentum versions about 21%/yr, and mean-reversion only 7.4%/yr, because it held
+  a position just ~10% of days. Trading frequency also moved with the market: mom_20
+  made about 29 trades in 2022 versus about 24 per year in the bull run, so choppy
+  markets cost more in fees.
+
+## Limitations
+
+- **One stock, one period.** Everything is AAPL, 2018-2024. AAPL was a huge winner, so
+  alpha vs SPY is inflated; compare against AAPL buy & hold too.
+- **Light parameter testing.** I tried a handful of lookbacks and picked mom_20 as the
+  headline, so it is mildly overfit. Don't read its Sharpe of 1.2 as a forecast.
+- **Alpha is simple subtraction** (strategy return minus SPY return), not
+  beta-adjusted, and the risk-free rate is 0.
+- **Same-close fills.** Both engines trade at the close of the day the signal fires.
+  Slightly optimistic; next-day-open fills would be more conservative.
+- **Simple costs.** A flat 5 bps, no bid-ask spread or market impact.
+- **Each regime is one episode.** 2022 and 2023-24 illustrate regime dependence, they
+  don't prove it. Sharpe over ~250 days is noisy, so I lean on return and drawdown there.
+
+## How to run
+
+```bash
+git clone https://github.com/TjWill859/trading-backtester.git
+cd trading-backtester
+python -m venv venv && source venv/bin/activate   # or use conda
+pip install -r requirements.txt
+
+python run_all.py                  # regenerates all charts and tables in results/
+python data/fetch_data.py          # optional: re-download price data from Yahoo Finance
+jupyter lab sanity_check.ipynb     # optional: the step-by-step scratch notebook
+```
+
+Price data for AAPL, MSFT, JPM, XOM and SPY (2018-2024) is already included in
+`data/raw/`, so `run_all.py` works offline. Re-downloading may give slightly different
+numbers if Yahoo revises its adjusted prices.
+
+## Project structure
+
+```
+data/         fetch_data.py (download), load_data.py (read CSVs), raw/ (price data)
+strategies/   momentum.py, mean_reversion.py  (vectorized signal + streaming class)
+engine/       vectorized.py, event_driven.py, metrics.py, plots.py
+results/      charts and CSV tables
+run_all.py    reproduces everything in results/
+sanity_check.ipynb   scratch notebook used while building
+```
