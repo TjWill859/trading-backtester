@@ -6,7 +6,6 @@ def momentum_signal(close: pd.Series, lookback: int = 126) -> pd.Series:
     return signal
 
 class MomentumStrategy:
-    """Streaming version: sees only history up to today."""
 
     def __init__(self, lookback=126):
         self.lookback = lookback

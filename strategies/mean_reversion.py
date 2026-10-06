@@ -19,7 +19,6 @@ def mean_reversion_signal(close: pd.Series, window: int = 20,
 
 
 class MeanReversionStrategy:
-    """Streaming version. Remembers whether it's currently holding."""
 
     def __init__(self, window=20, threshold=0.05):
         self.window = window

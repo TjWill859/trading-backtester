@@ -1,11 +1,3 @@
-"""
-run_all.py -- regenerate every chart and table in results/ with one command:
-
-    python run_all.py
-
-This is the notebook logic (Phases 6, 8, 9) collected in one place, so anyone
-can reproduce the README numbers without opening Jupyter.
-"""
 import matplotlib
 matplotlib.use("Agg")   # draw charts to files only; don't pop up windows
 
@@ -24,12 +16,12 @@ COST_BPS = 5
 
 
 class BuyAndHold:
-    """Reference strategy for the event-driven engine: always invested."""
+    # Reference strategy for the event-driven engine: always invested.
     def on_bar(self, history):
         return 1
 
 
-# ---------------------------------------------------------------- data
+# data
 close = load_universe(["AAPL"])["AAPL"]["Close"]
 spy_close = load_universe(["SPY"])["SPY"]["Close"]
 spy_equity = run_backtest(spy_close, pd.Series(1, index=spy_close.index),
@@ -37,7 +29,7 @@ spy_equity = run_backtest(spy_close, pd.Series(1, index=spy_close.index),
 
 always = pd.Series(1, index=close.index)   # "hold every day" signal
 
-# name -> (vectorized signal, function that builds a FRESH streaming strategy)
+# name: (vectorized signal, function that builds a FRESH streaming strategy)
 CASES = {
     "buy_hold_AAPL": (always,                                  lambda: BuyAndHold()),
     "mom_20":        (momentum_signal(close, 20),              lambda: MomentumStrategy(20)),
@@ -45,7 +37,7 @@ CASES = {
     "mr_20_5%":      (mean_reversion_signal(close, 20, 0.05),  lambda: MeanReversionStrategy(20, 0.05)),
 }
 
-# ------------------------------------------- 1. charts (vectorized engine)
+# 1. charts (vectorized engine)
 full_results = {name: run_backtest(close, sig, CAPITAL, COST_BPS)
                 for name, (sig, _) in CASES.items()}
 equities = {name: res["equity"] for name, res in full_results.items()}
@@ -57,7 +49,7 @@ plot_drawdowns({**equities, "SPY": spy_equity},
                save_path="results/drawdown.png")
 print("saved results/equity_curve.png and results/drawdown.png")
 
-# ------------------------- 2. vectorized vs event-driven (Phase 8 table)
+# 2. vectorized vs event-driven
 rows = {}
 for name, (sig, make_strategy) in CASES.items():
     runs = {
@@ -78,9 +70,9 @@ pd.DataFrame(rows).T.to_csv("results/engine_comparison.csv")
 print("saved results/engine_comparison.csv")
 
 
-# ------------------------------------- 3. regime comparison (Phase 9 table)
+# 3. regime comparison
 def slice_regime(result, start, end, initial_capital=CAPITAL):
-    """Cut one window out of a full-period backtest and rebuild a fresh equity curve."""
+    # Cut one window out of a full-period backtest and rebuild a fresh equity curve.
     first = result.index.searchsorted(pd.Timestamp(start))   # row of the window's first day
     r = result.iloc[first - 1:].loc[:end].copy()             # start ONE day early = "day 0"
     r.loc[r.index[0], ["strategy_return", "turnover"]] = 0.0 # day 0: no return, no trade

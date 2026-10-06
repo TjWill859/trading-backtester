@@ -3,6 +3,18 @@ from dataclasses import dataclass
 import pandas as pd
 import math
 
+"""
+Event-driven backtesting engine (v2).
+
+Flow per day: strategy sees history -> Portfolio sizes an Order -> Broker
+fills it and charges fees -> Portfolio records end-of-day equity.
+
+Conventions (chosen to match engine/vectorized.py):
+  - Signal computed from today's close, filled at today's close.
+  - Fee = dollars traded * cost_bps / 10,000, booked on the trade day.
+  - fractional=True reproduces the vectorized engine; False rounds to whole shares.
+"""
+
 
 @dataclass
 class Order:
