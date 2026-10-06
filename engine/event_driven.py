@@ -3,18 +3,6 @@ from dataclasses import dataclass
 import pandas as pd
 import math
 
-"""
-Event-driven backtesting engine (v2).
-
-Flow per day: strategy sees history -> Portfolio sizes an Order -> Broker
-fills it and charges fees -> Portfolio records end-of-day equity.
-
-Conventions (chosen to match engine/vectorized.py):
-  - Signal computed from today's close, filled at today's close.
-  - Fee = dollars traded * cost_bps / 10,000, booked on the trade day.
-  - fractional=True reproduces the vectorized engine; False rounds to whole shares.
-"""
-
 
 @dataclass
 class Order:
@@ -45,7 +33,6 @@ class Portfolio:
         return self.cash + holdings
 
     def make_order(self, date, ticker, target, price, fee_rate=0.0, fractional=True):
-        """Position sizing: what must I trade to hold `target` (0 to 1) of my money in ticker?"""
         equity = self.equity({ticker: price})
         current = self.positions.get(ticker, 0.0)
         desired = target * equity / (price * (1 + fee_rate))
@@ -85,7 +72,6 @@ class Broker:
 
 
 class EventDrivenBacktester:
-    """Walks through history one day at a time. The conveyor belt."""
 
     def __init__(self, close, ticker, strategy, initial_capital=100_000, cost_bps=0.0, fractional=True):
         self.close = close              # pd.Series of prices for ONE ticker
